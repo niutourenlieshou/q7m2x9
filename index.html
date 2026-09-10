@@ -51,6 +51,9 @@
   .tag.done{background:#dcfce7;color:#166534;}
   .tag.err{background:#fee2e2;color:#991b1b;}
   .qdel{border:none;background:transparent;color:#9ca3af;font-size:18px;padding:4px 6px;cursor:pointer;}
+  .fbtn{display:flex;align-items:center;justify-content:center;text-align:center;}
+  .filein{position:absolute;left:-9999px;width:1px;height:1px;opacity:0;}
+  #diag{font-size:12px;margin-top:8px;display:none;line-height:1.5;}
 </style>
 </head>
 <body>
@@ -60,11 +63,12 @@
   <div class="card">
     <h2>① 拍照 / 选图</h2>
     <div class="btns">
-      <button class="btn" id="btnCam">📷 拍照</button>
-      <button class="btn sec" id="btnGal">🖼 相册(可多选)</button>
+      <label class="btn fbtn" for="cam">📷 拍照</label>
+      <label class="btn sec fbtn" for="gal">🖼 相册(可多选)</label>
     </div>
-    <input type="file" id="cam" accept="image/*" capture="environment" hidden>
-    <input type="file" id="gal" accept="image/*" multiple hidden>
+    <input class="filein" type="file" id="cam" accept="image/*" capture="environment">
+    <input class="filein" type="file" id="gal" accept="image/*" multiple>
+    <div id="diag"></div>
 
     <!-- 单张(拍照)信息 -->
     <div id="infoBox">
@@ -272,8 +276,9 @@ function blobToArrayBuffer(blob){ return new Promise((ok,no)=>{
   const fr=new FileReader(); fr.onload=()=>ok(fr.result); fr.onerror=no; fr.readAsArrayBuffer(blob); }); }
 function loadImg(f){ return new Promise((ok,no)=>{
   const rd=new FileReader();
-  rd.onload=e=>{ const im=new Image(); im.onload=()=>ok(im); im.onerror=no; im.src=e.target.result; };
-  rd.onerror=no; rd.readAsDataURL(f);
+  rd.onload=e=>{ const im=new Image(); im.onload=()=>ok(im); im.onerror=()=>no(new Error('图片无法解码(可能是HEIC等格式)')); im.src=e.target.result; };
+  rd.onerror=()=>no(new Error('文件读取失败'));
+  rd.readAsDataURL(f);
 });}
 function compress(img,maxDim,quality){ return new Promise(ok=>{
   const sc=Math.min(1,maxDim/Math.max(img.width,img.height));
@@ -302,57 +307,87 @@ function makeName(t, pos, seq){
   return base + (seq?('_'+seq):'') + '.jpg';
 }
 
+function showDiag(t, kind){
+  const d=document.getElementById('diag');
+  if(!d) return;
+  d.style.display='block';
+  d.style.color = kind==='err' ? '#dc2626' : (kind==='ok' ? '#16a34a' : (kind==='warn' ? '#d97706' : '#6b7280'));
+  d.textContent=t;
+}
+window.addEventListener('error', function(ev){ showDiag('⚠️ 页面错误：'+(ev.message||ev.error), 'err'); });
+window.addEventListener('unhandledrejection', function(ev){ showDiag('⚠️ 处理异常：'+((ev.reason&&(ev.reason.message||ev.reason))||''), 'err'); });
+
 /* ---- 单张(拍照) ---- */
-btnCam.onclick=()=>cam.click();
-btnGal.onclick=()=>gal.click();
 async function handleCameraFile(f){
-  if(!f) return;
-  msgHideAll(); confirmArmed=false; queue=[]; renderQueue();
-  singleCard.style.display='block'; batchBox.classList.remove('show');
-  const r = await analyzeFile(f, true);
-  shotPos=r.pos; shotTime=r.time;
-  blobJpg=await compress(await loadImg(f), 1920, 0.85);
-  preview.src=URL.createObjectURL(blobJpg); preview.classList.add('show');
-  infoBox.classList.add('show'); 
-  iTime.textContent=fmtDT(shotTime);
-  if(shotPos){
-    iSrc.textContent=r.src+(r.pos.acc!=null?(' ±'+r.pos.acc+'米'):'');
-    iGps.textContent=Math.abs(shotPos.lat).toFixed(5)+', '+Math.abs(shotPos.lon).toFixed(5);
-  }else{ iSrc.textContent='无定位'; iGps.textContent='—'; }
-  if(!shotPos)
-    msgShow('msgWarn','⚠️ 本照片<b>没有定位信息</b>：请到空旷处等"定位OK"后重拍。');
-  else if(r.pos.acc!=null && r.pos.acc>100)
-    msgShow('msgWarn','⚠️ 定位精度 ±'+r.pos.acc+'米，可能归错区段。<b>确认无误请再点一次"上传"</b>，或换开阔位置重拍。');
+  if(!f){ showDiag('没有拿到照片文件：可能被浏览器拦截，请重试或换用系统浏览器/Chrome/Safari', 'err'); return; }
+  try{
+    msgHideAll(); confirmArmed=false; queue=[]; renderQueue();
+    singleCard.style.display='block'; batchBox.classList.remove('show');
+    showDiag('已选择：'+f.name+'（约'+(f.size/1048576).toFixed(1)+'MB）处理中…');
+    const r = await analyzeFile(f, true);
+    shotPos=r.pos; shotTime=r.time;
+    let img=null;
+    try{ img=await loadImg(f); }
+    catch(err){ showDiag('提示：'+err.message+'，将直接上传原图（未压缩）', 'warn'); }
+    blobJpg=null;
+    if(img){ try{ blobJpg=await compress(img,1920,0.85); }catch(err){ showDiag('提示：压缩失败，将直接上传原图', 'warn'); } }
+    if(!blobJpg) blobJpg=f;
+    if(img){ preview.src=URL.createObjectURL(blobJpg); preview.classList.add('show'); }
+    else{ preview.classList.remove('show'); preview.src=''; }
+    infoBox.classList.add('show');
+    iTime.textContent=fmtDT(shotTime);
+    if(shotPos){
+      iSrc.textContent=r.src+(r.pos.acc!=null?(' ±'+r.pos.acc+'米'):'');
+      iGps.textContent=Math.abs(shotPos.lat).toFixed(5)+', '+Math.abs(shotPos.lon).toFixed(5);
+    }else{ iSrc.textContent='无定位'; iGps.textContent='—'; }
+    if(!shotPos){
+      msgShow('msgWarn','⚠️ 本照片<b>没有定位信息</b>：请到空旷处等"定位OK"后重拍。');
+      showDiag('已就绪（无定位）','warn');
+    }else if(r.pos.acc!=null && r.pos.acc>100){
+      msgShow('msgWarn','⚠️ 定位精度 ±'+r.pos.acc+'米，可能归错区段。<b>确认无误请再点一次"上传"</b>。');
+      showDiag('已就绪（定位精度差）','warn');
+    }else{
+      showDiag('已就绪：'+r.src+'，可点上传','ok');
+    }
+  }catch(e){
+    showDiag('❌ 处理失败：'+((e&&e.message)||e)+'  （可换一张照片，或直接用相机拍摄）','err');
+  }
   checkReady();
 }
-cam.onchange=e=>{ handleCameraFile(e.target.files[0]); e.target.value=''; };
+cam.onchange=e=>{ const f=e.target.files&&e.target.files[0]; e.target.value=''; handleCameraFile(f); };
 
 /* ---- 批量(相册多选) ---- */
 gal.onchange=async e=>{
-  const files=[...e.target.files]; e.target.value='';
-  if(!files.length) return;
+  const files=[...(e.target.files||[])]; e.target.value='';
+  if(!files.length){ showDiag('没有拿到照片文件：可能被浏览器拦截，请重试或换用系统浏览器/Chrome/Safari','err'); return; }
   msgHideAll();
   infoBox.classList.remove('show'); preview.classList.remove('show');
   singleCard.style.display='none'; batchBox.classList.add('show');
-  batchSummary.textContent='正在读取 '+files.length+' 张照片…';
+  queue=[];
+  showDiag('已选 '+files.length+' 张，正在处理…');
   const usedNames=new Set();
   for(let i=0;i<files.length;i++){
     const f=files[i];
     batchSummary.textContent=`正在处理 ${i+1}/${files.length} …`;
-    let item={name:'', pos:null, src:'', t:null, status:'等待', err:'', url:'', blob:null, file:f};
+    let item={name:'',pos:null,src:'',t:null,status:'等待',err:'',note:'',url:'',blob:null,file:f};
     try{
       const r=await analyzeFile(f,false);          // 批量不套用当前定位, 避免办公室定位误配
       item.pos=r.pos; item.src=r.src; item.t=r.time;
-      item.blob=await compress(await loadImg(f),1920,0.85);
+      let img=null;
+      try{ img=await loadImg(f); }catch(err){ /* 无法解码则直接用原图上传 */ }
+      item.blob=null;
+      if(img){ try{ item.blob=await compress(img,1920,0.85); }catch(err){} }
+      if(!item.blob){ item.blob=f; item.note='未压缩'; }
+      try{ item.url=URL.createObjectURL(item.blob); }catch(err){}
       let seq=0, nm;
       do{ seq++; nm=makeName(r.time, r.pos, seq>1?seq:0); }while(usedNames.has(nm));
       usedNames.add(nm); item.name=nm;
-      item.url=URL.createObjectURL(item.blob);
     }catch(err){ item.status='err'; item.err='读取失败'; }
     queue.push(item);
   }
   renderQueue();
-  batchSummary.textContent=`共 ${queue.length} 张（带定位 ${queue.filter(x=>x.pos).length} 张 / 无定位 ${queue.filter(x=>!x.pos).length} 张）`;
+  batchSummary.textContent=`共 ${queue.length} 张（带定位 ${queue.filter(x=>x.pos).length} 张 / 无定位 ${queue.filter(x=>!x.pos).length} 张）— 点"全部上传"开始`;
+  showDiag('处理完成，可点"全部上传"','ok');
   checkReady();
 };
 function renderQueue(){
@@ -362,7 +397,7 @@ function renderQueue(){
     const tags = `<span class="tag ${it.pos?'gps':'nogps'}">${it.pos?it.src:'无定位'}</span>`
                + `<span class="tag ${it.status==='done'?'done':it.status==='上传中'?'up':it.status==='err'?'err':'wait'}">${it.status==='err'?('✗ '+it.err):it.status}</span>`;
     d.innerHTML = `<img src="${it.url||''}" alt="">`
-      + `<div class="qmeta"><b>${it.name||'(读取中)'}</b><br>${it.t?fmtDT(it.t):''}<br>${tags}</div>`
+      + `<div class="qmeta"><b>${it.name||'(读取中)'}</b><br>${it.t?fmtDT(it.t):''}<br>${tags}${it.note?('<span class="tag wait">'+it.note+'</span>'):''}</div>`
       + `<button class="qdel" title="移除">✕</button>`;
     d.querySelector('.qdel').onclick=()=>{ if(it.status==='上传中') return; queue.splice(idx,1); renderQueue(); checkReady(); };
     queueEl.appendChild(d);
