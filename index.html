@@ -20,7 +20,7 @@
   .btn.sec{background:#e5e7eb;color:var(--ink);}
   .btn:disabled{opacity:.45;}
   .btn.upload{background:var(--green-d);padding:16px;font-size:17px;}
-  #preview{display:none;width:100%;border-radius:10px;margin-top:10px;max-height:340px;object-fit:cover;}
+  #preview{display:none;width:100%;border-radius:10px;margin-top:10px;max-height:300px;object-fit:cover;}
   #preview.show{display:block;}
   .msg{padding:10px 12px;border-radius:10px;font-size:14px;margin-top:10px;display:none;}
   .msg.ok{display:block;background:#ecfdf5;color:#065f46;border:1px solid #a7f3d0;}
@@ -36,6 +36,21 @@
   #infoBox.show{display:block;}
   #linkBox{display:flex;gap:6px;margin-top:4px;}
   #linkOut{flex:1;font-size:11px;}
+  /* 批量列表 */
+  #batchBox{display:none;margin-top:10px;}
+  #batchBox.show{display:block;}
+  .qitem{display:flex;align-items:center;gap:10px;padding:8px;border:1px solid #e5e7eb;border-radius:10px;margin-top:8px;background:#fbfdfc;}
+  .qitem img{width:52px;height:52px;object-fit:cover;border-radius:8px;flex:0 0 52px;background:#eee;}
+  .qmeta{flex:1;min-width:0;font-size:12px;color:var(--sub);line-height:1.5;}
+  .qmeta b{color:var(--ink);font-size:13px;}
+  .tag{display:inline-block;font-size:11px;padding:1px 6px;border-radius:6px;margin-right:4px;}
+  .tag.gps{background:#dcfce7;color:#166534;}
+  .tag.nogps{background:#fee2e2;color:#991b1b;}
+  .tag.wait{background:#e5e7eb;color:#374151;}
+  .tag.up{background:#dbeafe;color:#1d4ed8;}
+  .tag.done{background:#dcfce7;color:#166534;}
+  .tag.err{background:#fee2e2;color:#991b1b;}
+  .qdel{border:none;background:transparent;color:#9ca3af;font-size:18px;padding:4px 6px;cursor:pointer;}
 </style>
 </head>
 <body>
@@ -46,29 +61,38 @@
     <h2>① 拍照 / 选图</h2>
     <div class="btns">
       <button class="btn" id="btnCam">📷 拍照</button>
-      <button class="btn sec" id="btnGal">🖼 从相册选</button>
+      <button class="btn sec" id="btnGal">🖼 相册(可多选)</button>
     </div>
     <input type="file" id="cam" accept="image/*" capture="environment" hidden>
-    <input type="file" id="gal" accept="image/*" hidden>
-    <img id="preview" alt="预览">
+    <input type="file" id="gal" accept="image/*" multiple hidden>
+
+    <!-- 单张(拍照)信息 -->
     <div id="infoBox">
       <b>本张照片信息</b><br>
       拍摄时间：<span id="iTime">—</span><br>
       定位来源：<span id="iSrc">—</span><br>
       GPS：<span id="iGps">—</span>
     </div>
+
+    <!-- 批量(相册)列表 -->
+    <div id="batchBox">
+      <div class="small" id="batchSummary" style="margin-bottom:4px"></div>
+      <div id="queue"></div>
+      <div class="btns" style="margin-top:10px">
+        <button class="btn upload" id="btnBatchUp">⬆️ 全部上传</button>
+        <button class="btn sec" id="btnClear" style="flex:0 0 90px">清空</button>
+      </div>
+      <div class="small" style="margin-top:6px">提示：无定位的照片也会上传，归档时会进「无法匹配」文件夹待人工核对。建议手机相机设置里开启"保存位置信息"。</div>
+    </div>
   </div>
 
-  <div class="card">
+  <div class="card" id="singleCard">
     <button class="btn upload" id="btnUp" disabled>⬆️ 上传（自动归档到电脑）</button>
     <progress id="pg" value="0" max="1"></progress>
     <div id="upInfo"></div>
     <div class="msg ok" id="msgOk"></div>
     <div class="msg warn" id="msgWarn"></div>
     <div class="msg err" id="msgErr"></div>
-    <div class="btns" style="margin-top:10px">
-      <button class="btn sec" id="btnNext" style="display:none">拍下一张</button>
-    </div>
   </div>
 
   <details>
@@ -89,12 +113,12 @@
       <input class="inp" id="linkOut" readonly>
       <button class="btn sec" id="btnLink" style="flex:0 0 72px">复制</button>
     </div>
-    <p class="small" style="margin-top:6px">⚠️ 链接里含密钥，请只发给本班组同事，且建议使用<b>仅上传权限</b>的专用密钥。</p>
+    <p class="small" style="margin-top:6px">⚠️ 链接里含密钥，请只发给本班组同事，建议使用<b>仅上传权限</b>的专用密钥。</p>
     <p class="small" style="margin-top:10px">
       使用要点：<br>
       ① 拍照等页面显示"定位OK"再按快门（精度差会红字警告）；<br>
-      ② <b>不要在微信里打开</b>（微信安卓不给网页定位），用自带浏览器/Safari，建议"添加到主屏幕"；<br>
-      ③ 山里没信号也能拍——照片自带相机定位，回有网处从"相册"补传即可正确归档。<br>
+      ② <b>不要在微信里打开</b>，用自带浏览器/Safari，建议"添加到主屏幕"；<br>
+      ③ 没信号也能拍：回有网处点"相册(可多选)"批量补传，会自动读照片里的拍摄定位。<br>
       🔒 线路坐标始终只存在您的电脑上，本页面与云端不含坐标。
     </p>
   </details>
@@ -102,22 +126,21 @@
 <script>
 'use strict';
 /*EXIF-START*/
-// ---- JPEG EXIF GPS 读取（标准 JPEG APP1/EXIF 结构解析）----
-function readExifGpsFromArrayBuffer(ab){
+// ---- JPEG EXIF 读取: 定位(GPS) + 拍摄时间(DateTimeOriginal) ----
+function readExifFromArrayBuffer(ab){
   try{
     const dv=new DataView(ab);
-    if(dv.byteLength<4 || dv.getUint16(0)!==0xFFD8) return null;   // 仅JPEG
+    if(dv.byteLength<4 || dv.getUint16(0)!==0xFFD8) return null;
     let off=2;
     while(off+4<=dv.byteLength){
       if(dv.getUint8(off)!==0xFF){ off++; continue; }
       const m=dv.getUint8(off+1);
       if(m===0xD8||(m>=0xD0&&m<=0xD7)||m===0x01){ off+=2; continue; }
       const len=dv.getUint16(off+2);
-      if(m===0xE1 && len>10){                        // APP1
-        let p=off+4;
-        if(dv.getUint32(p)===0x45786966 && dv.getUint8(p+4)===0){  // 'Exif\0'
-          const g=parseTiffGps(dv, p+6);
-          if(g) return g;
+      if(m===0xE1 && len>10){
+        const p=off+4;
+        if(dv.getUint32(p)===0x45786966 && dv.getUint8(p+4)===0){
+          return parseTiff(dv, p+6);
         }
       }
       off += 2+len;
@@ -125,28 +148,34 @@ function readExifGpsFromArrayBuffer(ab){
   }catch(e){}
   return null;
 }
-function parseTiffGps(dv, t){
+function readExifGpsFromArrayBuffer(ab){          // 兼容旧调用
+  const e=readExifFromArrayBuffer(ab);
+  return e && e.gps ? e.gps : null;
+}
+function parseTiff(dv, t){
   const le = dv.getUint16(t)===0x4949;
   const u16=(o)=>dv.getUint16(o,le), u32=(o)=>dv.getUint32(o,le);
   const TYPE_SIZE={1:1,2:1,3:2,4:4,5:8,7:1,9:4,10:8};
   if(u16(t+2)!==0x2A) return null;
   const ifd0 = t + u32(t+4);
-  const n=u16(ifd0);
-  let gpsOff=null;
+  const n = u16(ifd0);
+  let gpsOff=null, exifOff=null;
   for(let i=0;i<n;i++){
-    const e=ifd0+2+i*12;
-    if(u16(e)===0x8825){ gpsOff = u32(e+8); break; }   // GPS IFD 指针
+    const e=ifd0+2+i*12, tag=u16(e);
+    if(tag===0x8825) gpsOff = t + u32(e+8);
+    else if(tag===0x8769) exifOff = t + u32(e+8);
   }
-  if(gpsOff===null) return null;
-  gpsOff += t;
-  const ng=u16(gpsOff);
+  const out={gps:null, time:null};
+  if(gpsOff) out.gps = readGpsIfd(dv, t, gpsOff, u16, u32, TYPE_SIZE);
+  if(exifOff) out.time = readExifTime(dv, t, exifOff, u16, u32, TYPE_SIZE);
+  return (out.gps||out.time) ? out : null;
+}
+function readGpsIfd(dv, t, gp, u16, u32, TS){
+  const ng=u16(gp);
   let latRef=null,lat=[],lonRef=null,lon=[];
   for(let i=0;i<ng;i++){
-    const e=gpsOff+2+i*12;
-    const tag=u16(e), type=u16(e+2), cnt=u32(e+4);
-    let valOff;
-    // 值长度≤4字节则内联在 e+8, 否则 e+8 存的是相对TIFF头的偏移
-    if((TYPE_SIZE[type]||0)*cnt<=4) valOff=e+8; else valOff=t+u32(e+8);
+    const e=gp+2+i*12, tag=u16(e), type=u16(e+2), cnt=u32(e+4);
+    const valOff=(TS[type]||0)*cnt<=4 ? e+8 : t+u32(e+8);
     if(tag===1) latRef=asciiAt(dv,valOff);
     else if(tag===2&&type===5) lat=rationals(dv,valOff,cnt,u32);
     else if(tag===3) lonRef=asciiAt(dv,valOff);
@@ -157,6 +186,20 @@ function parseTiffGps(dv, t){
   const la=dms(lat,latRef), lo=dms(lon,lonRef);
   if(!isFinite(la)||!isFinite(lo)) return null;
   return {lat:la, lon:lo};
+}
+function readExifTime(dv, t, ep, u16, u32, TS){
+  const ne=u16(ep);
+  for(let i=0;i<ne;i++){
+    const e=ep+2+i*12, tag=u16(e), type=u16(e+2), cnt=u32(e+4);
+    if(tag===0x9003 && type===2 && cnt>=19){
+      const off=(TS[type]||0)*cnt<=4 ? e+8 : t+u32(e+8);
+      let s='';
+      for(let k=0;k<19;k++) s+=String.fromCharCode(dv.getUint8(off+k));
+      const m=s.match(/^(\d{4}):(\d{2}):(\d{2}) (\d{2}):(\d{2}):(\d{2})$/);
+      if(m) return new Date(+m[1], +m[2]-1, +m[3], +m[4], +m[5], +m[6]);
+    }
+  }
+  return null;
 }
 function rationals(dv,o,cnt,u32){
   const r=[];
@@ -175,18 +218,18 @@ function asciiAt(dv,o){
 
 let CFG=loadCfg();
 let blobJpg=null, shotPos=null, gpsLatest=null, shotTime=null, confirmArmed=false;
+let queue=[];              // 批量队列: {blob, name, pos, t, status, err, url}
 
 function loadCfg(){ try{ return JSON.parse(localStorage.getItem('cfg')||'{}'); }catch(e){ return {}; } }
 function saveCfg(c){ localStorage.setItem('cfg', JSON.stringify(c)); }
 function fillInputs(){ setBucket.value=CFG.bucket||''; setRegion.value=CFG.region||'oss-cn-shenzhen'; setAk.value=CFG.ak||''; setSk.value=CFG.sk||''; }
 (function initCfg(){
-  // 支持 ?b=桶&r=地域&a=AK&s=SK 一键配置(点链接自动填好并保存)
   try{
     const q=new URLSearchParams(location.search);
     if(q.get('b')||q.get('a')){
       CFG={bucket:q.get('b')||'', region:q.get('r')||'oss-cn-shenzhen', ak:q.get('a')||'', sk:q.get('s')||''};
       saveCfg(CFG);
-      history.replaceState(null,'',location.pathname);   // 去掉地址栏里的密钥
+      history.replaceState(null,'',location.pathname);
     }
   }catch(e){}
   fillInputs();
@@ -220,42 +263,9 @@ function startGps(){
   }, {enableHighAccuracy:true, maximumAge:5000, timeout:20000});
 }
 
-/* ---- 拍照/选图 ---- */
-btnCam.onclick=()=>cam.click();
-btnGal.onclick=()=>gal.click();
-function msgShow(el,t){ el.innerHTML=t; el.style.display='block'; }
+/* ---- 通用工具 ---- */
+function msgShow(id,t){ const el=document.getElementById(id); el.innerHTML=t; el.style.display='block'; }
 function msgHideAll(){ ['msgOk','msgWarn','msgErr'].forEach(id=>document.getElementById(id).style.display='none'); }
-async function handleFile(f){
-  if(!f) return;
-  msgHideAll(); confirmArmed=false;
-  shotTime=new Date();
-  // 1) 尝试读照片自带 EXIF 定位(相机拍照时写入) —— 无信号补传场景的关键
-  const ab = await blobToArrayBuffer(f).catch(()=>null);
-  const exif = ab ? readExifGpsFromArrayBuffer(ab) : null;
-  // 2) 实时定位兜底
-  const live = gpsLatest && (Date.now()-gpsLatest.ts<=120000) ? gpsLatest : null;
-  if(exif)      shotPos={lat:exif.lat, lon:exif.lon, acc:null,  src:'相机定位(EXIF)'};
-  else if(live) shotPos={lat:live.lat, lon:live.lon, acc:live.acc, src:'实时定位', stale:false};
-  else if(gpsLatest) shotPos={lat:gpsLatest.lat, lon:gpsLatest.lon, acc:gpsLatest.acc, src:'实时定位(已过时)', stale:true};
-  else         shotPos=null;
-
-  blobJpg=await compress(await loadImg(f), 1920, 0.85);
-  preview.src=URL.createObjectURL(blobJpg); preview.classList.add('show');
-  infoBox.classList.add('show');
-  iTime.textContent=fmtDT(shotTime);
-  if(shotPos){
-    iSrc.textContent=shotPos.src;
-    iGps.textContent=Math.abs(shotPos.lat).toFixed(5)+', '+Math.abs(shotPos.lon).toFixed(5)
-      +(shotPos.acc!=null?('（±'+shotPos.acc+'米）'):'');
-  }else{
-    iSrc.textContent='未定位'; iGps.textContent='—';
-  }
-  if(!shotPos)
-    msgShow(msgWarn,'⚠️ 本照片<b>没有定位信息</b>：请到空旷处等页面显示"定位OK"后重拍（如用相册补传，请确认照片是<b>用手机相机拍摄</b>、且开了相机定位）。');
-  else if(shotPos.stale||(shotPos.src==='实时定位'&&shotPos.acc>100))
-    msgShow(msgWarn,'⚠️ 当前定位精度差(±'+shotPos.acc+'米)，归档可能不准确。<b>上传前请再次点击"上传"确认</b>，或换个开阔位置重拍。');
-  checkReady();
-}
 function fmtDT(d){ const p=n=>String(n).padStart(2,'0');
   return d.getFullYear()+'-'+p(d.getMonth()+1)+'-'+p(d.getDate())+' '+p(d.getHours())+':'+p(d.getMinutes())+':'+p(d.getSeconds()); }
 function blobToArrayBuffer(blob){ return new Promise((ok,no)=>{
@@ -272,10 +282,96 @@ function compress(img,maxDim,quality){ return new Promise(ok=>{
   cv.getContext('2d').drawImage(img,0,0,cv.width,cv.height);
   cv.toBlob(b=>ok(b),'image/jpeg',quality);
 });}
-cam.onchange=e=>{ handleFile(e.target.files[0]); e.target.value=''; };
-gal.onchange=e=>{ handleFile(e.target.files[0]); e.target.value=''; };
+// 读取一张图片文件的位置与时间(EXIF优先, 其次实时定位/文件时间)
+async function analyzeFile(file, useLiveFallback){
+  const ab = await blobToArrayBuffer(file).catch(()=>null);
+  const ex = ab ? readExifFromArrayBuffer(ab) : null;
+  const live = gpsLatest && (Date.now()-gpsLatest.ts<=120000) ? gpsLatest : null;
+  let pos=null, src='无定位';
+  if(ex && ex.gps){ pos={lat:ex.gps.lat, lon:ex.gps.lon, acc:null}; src='相机定位(EXIF)'; }
+  else if(useLiveFallback && live){ pos={lat:live.lat, lon:live.lon, acc:live.acc}; src='实时定位'; }
+  else if(useLiveFallback && gpsLatest){ pos={lat:gpsLatest.lat, lon:gpsLatest.lon, acc:gpsLatest.acc}; src='实时定位(已过时)'; }
+  const time = (ex && ex.time) ? ex.time : (file.lastModified ? new Date(file.lastModified) : new Date());
+  return {pos, src, time};
+}
+function makeName(t, pos, seq){
+  const p=n=>String(n).padStart(2,'0');
+  const ts=t.getFullYear()+p(t.getMonth()+1)+p(t.getDate())+'_'+p(t.getHours())+p(t.getMinutes())+p(t.getSeconds());
+  const base = pos ? ts+'_'+Math.abs(pos.lat).toFixed(4)+'_'+Math.abs(pos.lon).toFixed(4)
+                   : ts+'_未定位';
+  return base + (seq?('_'+seq):'') + '.jpg';
+}
 
-/* ---- 上传(PostObject Policy签名) ---- */
+/* ---- 单张(拍照) ---- */
+btnCam.onclick=()=>cam.click();
+btnGal.onclick=()=>gal.click();
+async function handleCameraFile(f){
+  if(!f) return;
+  msgHideAll(); confirmArmed=false; queue=[]; renderQueue();
+  singleCard.style.display='block'; batchBox.classList.remove('show');
+  const r = await analyzeFile(f, true);
+  shotPos=r.pos; shotTime=r.time;
+  blobJpg=await compress(await loadImg(f), 1920, 0.85);
+  preview.src=URL.createObjectURL(blobJpg); preview.classList.add('show');
+  infoBox.classList.add('show'); 
+  iTime.textContent=fmtDT(shotTime);
+  if(shotPos){
+    iSrc.textContent=r.src+(r.pos.acc!=null?(' ±'+r.pos.acc+'米'):'');
+    iGps.textContent=Math.abs(shotPos.lat).toFixed(5)+', '+Math.abs(shotPos.lon).toFixed(5);
+  }else{ iSrc.textContent='无定位'; iGps.textContent='—'; }
+  if(!shotPos)
+    msgShow('msgWarn','⚠️ 本照片<b>没有定位信息</b>：请到空旷处等"定位OK"后重拍。');
+  else if(r.pos.acc!=null && r.pos.acc>100)
+    msgShow('msgWarn','⚠️ 定位精度 ±'+r.pos.acc+'米，可能归错区段。<b>确认无误请再点一次"上传"</b>，或换开阔位置重拍。');
+  checkReady();
+}
+cam.onchange=e=>{ handleCameraFile(e.target.files[0]); e.target.value=''; };
+
+/* ---- 批量(相册多选) ---- */
+gal.onchange=async e=>{
+  const files=[...e.target.files]; e.target.value='';
+  if(!files.length) return;
+  msgHideAll();
+  infoBox.classList.remove('show'); preview.classList.remove('show');
+  singleCard.style.display='none'; batchBox.classList.add('show');
+  batchSummary.textContent='正在读取 '+files.length+' 张照片…';
+  const usedNames=new Set();
+  for(let i=0;i<files.length;i++){
+    const f=files[i];
+    batchSummary.textContent=`正在处理 ${i+1}/${files.length} …`;
+    let item={name:'', pos:null, src:'', t:null, status:'等待', err:'', url:'', blob:null, file:f};
+    try{
+      const r=await analyzeFile(f,false);          // 批量不套用当前定位, 避免办公室定位误配
+      item.pos=r.pos; item.src=r.src; item.t=r.time;
+      item.blob=await compress(await loadImg(f),1920,0.85);
+      let seq=0, nm;
+      do{ seq++; nm=makeName(r.time, r.pos, seq>1?seq:0); }while(usedNames.has(nm));
+      usedNames.add(nm); item.name=nm;
+      item.url=URL.createObjectURL(item.blob);
+    }catch(err){ item.status='err'; item.err='读取失败'; }
+    queue.push(item);
+  }
+  renderQueue();
+  batchSummary.textContent=`共 ${queue.length} 张（带定位 ${queue.filter(x=>x.pos).length} 张 / 无定位 ${queue.filter(x=>!x.pos).length} 张）`;
+  checkReady();
+};
+function renderQueue(){
+  queueEl.innerHTML='';
+  queue.forEach((it,idx)=>{
+    const d=document.createElement('div'); d.className='qitem';
+    const tags = `<span class="tag ${it.pos?'gps':'nogps'}">${it.pos?it.src:'无定位'}</span>`
+               + `<span class="tag ${it.status==='done'?'done':it.status==='上传中'?'up':it.status==='err'?'err':'wait'}">${it.status==='err'?('✗ '+it.err):it.status}</span>`;
+    d.innerHTML = `<img src="${it.url||''}" alt="">`
+      + `<div class="qmeta"><b>${it.name||'(读取中)'}</b><br>${it.t?fmtDT(it.t):''}<br>${tags}</div>`
+      + `<button class="qdel" title="移除">✕</button>`;
+    d.querySelector('.qdel').onclick=()=>{ if(it.status==='上传中') return; queue.splice(idx,1); renderQueue(); checkReady(); };
+    queueEl.appendChild(d);
+  });
+}
+const queueEl=document.getElementById('queue');
+btnClear.onclick=()=>{ if(queue.some(x=>x.status==='上传中')) return; queue=[]; renderQueue(); batchBox.classList.remove('show'); checkReady(); };
+
+/* ---- 上传 ---- */
 function b64FromBytes(u8){ let bin=''; const CH=0x8000;
   for(let i=0;i<u8.length;i+=CH) bin+=String.fromCharCode.apply(null,u8.subarray(i,i+CH));
   return btoa(bin); }
@@ -296,57 +392,66 @@ async function ossPostObject(objPath, blob){
   fd.append('file',blob,'photo.jpg');
   return fetch(ossHost()+'/', {method:'POST', body:fd, cache:'no-store'});
 }
-
 function checkReady(){
-  btnUp.disabled=!(CFG.bucket&&CFG.ak&&CFG.sk&&blobJpg);
+  const okCfg=CFG.bucket&&CFG.ak&&CFG.sk;
+  btnUp.disabled=!(okCfg&&blobJpg);
+  btnBatchUp.disabled=!(okCfg&&queue.some(x=>x.status==='等待'||x.status==='err'));
 }
 btnUp.onclick=async()=>{
   msgHideAll();
-  if(!shotPos){
-    msgShow(msgErr,'无法上传：本照片没有定位信息。请到空旷处重拍（实时定位）或用带相机定位的原图补传。');
-    return;
-  }
-  // 精度差/定位过时时需要再点一次确认
-  const needConfirm = shotPos.src!=='相机定位(EXIF)' && (shotPos.stale || shotPos.acc>100);
-  if(needConfirm && !confirmArmed){
+  if(!shotPos){ msgShow('msgErr','无法上传：本照片没有定位信息，请到空旷处重拍。'); return; }
+  if(shotPos.acc!=null && shotPos.acc>100 && !confirmArmed){
     confirmArmed=true;
-    msgShow(msgWarn,'⚠️ 定位精度 ±'+shotPos.acc+'米，可能归错区段。确认无误请<b>再点一次"上传"</b>。');
+    msgShow('msgWarn','⚠️ 定位精度 ±'+shotPos.acc+'米，可能归错区段。确认无误请<b>再点一次"上传"</b>。');
     return;
   }
-  const d=shotTime||new Date(), p=n=>String(n).padStart(2,'0');
-  const ts=d.getFullYear()+p(d.getMonth()+1)+p(d.getDate())+'_'+p(d.getHours())+p(d.getMinutes())+p(d.getSeconds());
-  const fname = shotPos
-    ? ts+'_'+Math.abs(shotPos.lat).toFixed(4)+'_'+Math.abs(shotPos.lon).toFixed(4)+'.jpg'
-    : '未定位_'+ts+'.jpg';
-  const objPath='待处理/'+fname;
+  const objPath='待处理/'+makeName(shotTime||new Date(), shotPos, 0);
   btnUp.disabled=true; pg.style.display='block'; pg.value=0.3; upInfo.textContent='上传中…';
   try{
     const r=await ossPostObject(objPath, blobJpg);
     pg.value=1;
     if(r.ok){
       upInfo.textContent='';
-      msgShow(msgOk,'✅ 上传成功！<br>文件：<b>'+fname+'</b><br><span class="small">办公室电脑 1~2 分钟内自动下载，按杆号归入「树患照片归档」文件夹。</span>');
-      btnNext.style.display='block';
+      msgShow('msgOk','✅ 上传成功！<br>文件：<b>'+objPath.split('/').pop()+'</b><br><span class="small">办公室电脑会自动下载并按杆号归档。可以直接接着拍下一张。</span>');
+      blobJpg=null; preview.classList.remove('show'); preview.src=''; infoBox.classList.remove('show'); confirmArmed=false;
     }else{
       let why='HTTP '+r.status;
       if(r.status===403) why='AccessKey 无效/无权上传，或时间偏差>15分钟';
-      if(r.status===405) why='CORS 未配置 POST，见部署指南';
+      if(r.status===405) why='CORS 未配置 POST';
       if(r.status===409) why='同名文件已存在，请重拍';
       throw new Error(why);
     }
   }catch(e){
     pg.value=0; upInfo.textContent='';
-    msgShow(msgErr,'❌ 上传失败：'+(/Failed to fetch|NetworkError/i.test(e.message||'')?'网络不通或CORS未配置':e.message));
-    btnUp.disabled=false;
+    msgShow('msgErr','❌ 上传失败：'+(/Failed to fetch|NetworkError/i.test(e.message||'')?'网络不通或CORS未配置':e.message));
   }
-};
-btnNext.onclick=()=>{
-  blobJpg=null; shotPos=null; confirmArmed=false;
-  preview.classList.remove('show'); preview.src='';
-  infoBox.classList.remove('show');
-  msgHideAll(); btnNext.style.display='none'; upInfo.textContent=''; pg.style.display='none';
   checkReady();
 };
+btnBatchUp.onclick=async()=>{
+  const todo=queue.filter(x=>x.status==='等待'||x.status==='err');
+  if(!todo.length) return;
+  if(!CFG.bucket||!CFG.ak||!CFG.sk){ alert('请先在"设置与说明"里填写 OSS 配置'); return; }
+  btnBatchUp.disabled=true;
+  let done=0, fail=0;
+  for(const it of todo){
+    if(!it.blob){ it.status='err'; it.err='无图片数据'; fail++; renderQueue(); continue; }
+    it.status='上传中'; it.err=''; renderQueue();
+    try{
+      const r=await ossPostObject('待处理/'+it.name, it.blob);
+      if(r.ok){ it.status='done'; done++; }
+      else{ it.status='err'; it.err='HTTP '+r.status; fail++; }
+    }catch(e){ it.status='err'; it.err='网络失败'; fail++; }
+    renderQueue();
+    batchSummary.textContent=`上传进度 ${done+fail}/${todo.length}（成功 ${done} / 失败 ${fail}）`;
+  }
+  batchSummary.textContent=`✔ 完成：成功 ${done} 张` + (fail?`，失败 ${fail} 张（可点"全部上传"重试）`:'');
+  checkReady();
+};
+
+const infoBox=document.getElementById('infoBox');
+const batchBox=document.getElementById('batchBox');
+const singleCard=document.getElementById('singleCard');
+const batchSummary=document.getElementById('batchSummary');
 
 startGps();
 buildLink();
