@@ -62,6 +62,14 @@
 
   <div class="card">
     <h2>① 拍照 / 选图</h2>
+    <div id="lineWrap" style="display:none;margin-bottom:10px">
+      <label class="t" style="margin-top:0">本次巡视线路（默认不用选）</label>
+      <select class="inp" id="lineSel"></select>
+      <div class="small" style="margin-top:4px">
+        仅当巡视<b>线路密集处</b>（变电站出口、同塔段、并行走廊）或发现归错时才需选择；<br>
+        不在列表中的线路无需选择（自动匹配已足够准确）。
+      </div>
+    </div>
     <div class="btns">
       <label class="btn fbtn" for="cam">📷 拍照</label>
       <label class="btn sec fbtn" for="gal">🖼 相册(可多选)</label>
@@ -93,6 +101,7 @@
 
   <div class="card" id="singleCard">
     <button class="btn upload" id="btnUp" disabled>⬆️ 上传（自动归档到电脑）</button>
+    <div id="upHint" class="small" style="margin-top:8px"></div>
     <progress id="pg" value="0" max="1"></progress>
     <div id="upInfo"></div>
     <div class="msg ok" id="msgOk"></div>
@@ -224,6 +233,7 @@ function asciiAt(dv,o){
 let CFG=loadCfg();
 let blobJpg=null, shotPos=null, gpsLatest=null, shotTime=null, confirmArmed=false;
 let queue=[];              // 批量队列: {blob, name, pos, t, status, err, url}
+let LINE_NAME='';          // 本次指定线路（空=自动匹配）
 
 function loadCfg(){ try{ return JSON.parse(localStorage.getItem('cfg')||'{}'); }catch(e){ return {}; } }
 function saveCfg(c){ localStorage.setItem('cfg', JSON.stringify(c)); }
@@ -372,7 +382,10 @@ gal.onchange=async e=>{
     batchSummary.textContent=`正在处理 ${i+1}/${files.length} …`;
     let item={name:'',pos:null,src:'',t:null,status:'等待',err:'',note:'',url:'',blob:null,file:f};
     try{
-      const r=await analyzeFile(f,false);          // 批量不套用当前定位, 避免办公室定位误配
+      // 刚到(10分钟内)拍的照片允许用当前实时定位兜底；旧照片只认EXIF，避免套错位置
+      const ft = f.lastModified ? new Date(f.lastModified) : new Date();
+      const fresh = (Date.now()-ft.getTime()) <= 10*60*1000;
+      const r=await analyzeFile(f, fresh);
       item.pos=r.pos; item.src=r.src; item.t=r.time;
       let img=null;
       try{ img=await loadImg(f); }catch(err){ /* 无法解码则直接用原图上传 */ }
@@ -387,8 +400,10 @@ gal.onchange=async e=>{
     queue.push(item);
   }
   renderQueue();
-  batchSummary.textContent=`共 ${queue.length} 张（带定位 ${queue.filter(x=>x.pos).length} 张 / 无定位 ${queue.filter(x=>!x.pos).length} 张）— 点"全部上传"开始`;
-  showDiag('处理完成，可点"全部上传"','ok');
+  const noPos=queue.filter(x=>!x.pos).length;
+  batchSummary.textContent=`共 ${queue.length} 张（带定位 ${queue.length-noPos} 张 / 无定位 ${noPos} 张）— 点"全部上传"开始`;
+  if(noPos) showDiag(`有 ${noPos} 张没有定位（会进"无法匹配"文件夹）：常见原因 ①用相册选的是旧照片 ②手机未给浏览器定位权限 ③在微信里打开。现场拍建议用上面的📷拍照按钮（带实时定位）`,'warn');
+  else showDiag('处理完成，可点"全部上传"','ok');
   checkReady();
 };
 function renderQueue(){
@@ -417,6 +432,34 @@ async function hmacSha1B64(msg){
   return b64FromBytes(new Uint8Array(await crypto.subtle.sign('HMAC', key, new TextEncoder().encode(msg))));
 }
 function ossHost(){ return 'https://'+CFG.bucket+'.'+CFG.region+'.aliyuncs.com'; }
+// 将文件名拼成上传路径（若指定了线路则加一层目录，电脑端只在该线路内匹配）
+function ossPath(fname){ return '待处理/' + (LINE_NAME ? LINE_NAME + '/' : '') + fname; }
+
+/* ---- 线路下拉清单（从自己OSS读取，只含线路名，不含坐标） ---- */
+async function loadLineList(){
+  if(!(CFG.bucket && CFG.region)) return;
+  try{
+    const r = await fetch(ossHost()+'/%E9%85%8D%E7%BD%AE/线路清单.json', {cache:'no-store'});
+    if(!r.ok){ console.warn('线路清单不可用', r.status); return; }
+    const d = await r.json();
+    const list = (d && d.lines) || [];
+    if(!list.length) return;
+    lineSel.innerHTML='';
+    const o0=document.createElement('option'); o0.value=''; o0.textContent='（自动匹配 · 默认）'; lineSel.appendChild(o0);
+    list.forEach(it=>{
+      const o=document.createElement('option'); o.value=it.name; o.textContent=it.name; lineSel.appendChild(o);
+    });
+    lineWrap.style.display='block';
+    const saved=sessionStorage.getItem('lineSel')||'';
+    if(saved){ LINE_NAME=saved; lineSel.value=saved; }
+    lineSel.onchange=()=>{ LINE_NAME=lineSel.value; sessionStorage.setItem('lineSel',LINE_NAME); lineHint(); };
+    lineHint();
+  }catch(e){ console.warn('线路清单读取失败', e); }
+}
+function lineHint(){
+  if(!LINE_NAME){ showDiag('未指定线路 → 按自动匹配（适合大多数情况）'); return; }
+  showDiag('已指定线路：'+LINE_NAME+' —— 本次照片将只归入该线路。巡视结束/换线后请改回“自动匹配”', 'warn');
+}
 async function ossPostObject(objPath, blob){
   const exp=new Date(Date.now()+15*60*1000).toISOString().replace(/\.\d+Z$/,'Z');
   const policy=b64utf8(JSON.stringify({expiration:exp, conditions:[
@@ -432,6 +475,16 @@ function checkReady(){
   const okCfg=CFG.bucket&&CFG.ak&&CFG.sk;
   btnUp.disabled=!(okCfg&&blobJpg);
   btnBatchUp.disabled=!(okCfg&&queue.some(x=>x.status==='等待'||x.status==='err'));
+  const hint=document.getElementById('upHint');
+  if(hint){
+    if(!okCfg) hint.innerHTML='⚠️ 还不能上传：请到下面「设置与说明」里填写 OSS 配置，<br>或用<b>一键配置链接</b>重新打开本页（会自动填好）';
+    else if(!blobJpg) hint.textContent='配置已就绪 ✓ 请先拍照或从相册选图';
+    else hint.textContent='✓ 配置已就绪，可以上传了';
+  }
+  const bs=document.getElementById('batchSummary');
+  if(bs && !okCfg && (bs.textContent||'').indexOf('OSS')<0){
+    bs.textContent=(bs.textContent||'')+' ｜ ⚠️ 请先填写 OSS 配置才能上传';
+  }
 }
 btnUp.onclick=async()=>{
   msgHideAll();
@@ -441,7 +494,7 @@ btnUp.onclick=async()=>{
     msgShow('msgWarn','⚠️ 定位精度 ±'+shotPos.acc+'米，可能归错区段。确认无误请<b>再点一次"上传"</b>。');
     return;
   }
-  const objPath='待处理/'+makeName(shotTime||new Date(), shotPos, 0);
+  const objPath=ossPath(makeName(shotTime||new Date(), shotPos, 0));
   btnUp.disabled=true; pg.style.display='block'; pg.value=0.3; upInfo.textContent='上传中…';
   try{
     const r=await ossPostObject(objPath, blobJpg);
@@ -473,7 +526,7 @@ btnBatchUp.onclick=async()=>{
     if(!it.blob){ it.status='err'; it.err='无图片数据'; fail++; renderQueue(); continue; }
     it.status='上传中'; it.err=''; renderQueue();
     try{
-      const r=await ossPostObject('待处理/'+it.name, it.blob);
+      const r=await ossPostObject(ossPath(it.name), it.blob);
       if(r.ok){ it.status='done'; done++; }
       else{ it.status='err'; it.err='HTTP '+r.status; fail++; }
     }catch(e){ it.status='err'; it.err='网络失败'; fail++; }
@@ -491,6 +544,7 @@ const batchSummary=document.getElementById('batchSummary');
 
 startGps();
 buildLink();
+loadLineList();
 checkReady();
 </script>
 </body>
