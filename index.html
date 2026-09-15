@@ -4,6 +4,10 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
 <meta name="theme-color" content="#0b6e4f">
+<!-- 不希望被搜索引擎收录/被机器抓取 -->
+<meta name="robots" content="noindex, nofollow, noarchive, nosnippet, noimageindex">
+<meta name="googlebot" content="noindex, nofollow">
+<meta name="referrer" content="no-referrer">
 <title>树患管控拍照</title>
 <style>
   :root{--green:#0b6e4f;--green-d:#085a41;--bg:#f2f6f4;--card:#fff;--ink:#1f2937;--sub:#6b7280;--ok:#16a34a;--warn:#d97706;--err:#dc2626;}
@@ -55,7 +59,7 @@
 
   <div class="card">
     <h2>① 本次巡视线路 <span class="small">（必选）</span></h2>
-    <input class="inp" id="lineFilter" placeholder="输入关键字筛选线路，例如：东平">
+    <input class="inp" id="lineFilter" placeholder="输入线路名称关键字（如 甲线、乙线）">
     <select class="inp" id="lineSel" style="margin-top:6px"></select>
     <div class="small" id="lineTip" style="margin-top:6px">正在加载线路清单…</div>
   </div>
@@ -85,9 +89,9 @@
     <summary>设置与说明</summary>
     <p class="small">阿里云 OSS 凭据（每台手机填一次，只存本机）。</p>
     <label class="t">Bucket 名称</label>
-    <input class="inp" id="setBucket" placeholder="例如 fortree">
-    <label class="t">地域 Endpoint（华南深圳填 oss-cn-shenzhen）</label>
-    <input class="inp" id="setRegion" placeholder="oss-cn-shenzhen">
+    <input class="inp" id="setBucket" placeholder="你的桶名">
+    <label class="t">地域 Endpoint<span class="small">（按你开通 OSS 时的地域填）</span></label>
+    <input class="inp" id="setRegion" placeholder="你开通时的地域，例如 oss-cn-xxxxx">
     <label class="t">AccessKey ID</label>
     <input class="inp" id="setAk" placeholder="LTAI…">
     <label class="t">AccessKey Secret</label>
@@ -192,19 +196,19 @@ let gpsLatest=null;
 
 function loadCfg(){ try{ return JSON.parse(localStorage.getItem('cfg')||'{}'); }catch(e){ return {}; } }
 function saveCfg(c){ localStorage.setItem('cfg', JSON.stringify(c)); }
-function fillInputs(){ setBucket.value=CFG.bucket||''; setRegion.value=CFG.region||'oss-cn-shenzhen'; setAk.value=CFG.ak||''; setSk.value=CFG.sk||''; }
+function fillInputs(){ setBucket.value=CFG.bucket||''; setRegion.value=CFG.region||''; setAk.value=CFG.ak||''; setSk.value=CFG.sk||''; }
 (function initCfg(){
   try{
     const q=new URLSearchParams(location.search);
     if(q.get('b')||q.get('a')){
-      CFG={bucket:q.get('b')||'', region:q.get('r')||'oss-cn-shenzhen', ak:q.get('a')||'', sk:q.get('s')||''};
+      CFG={bucket:q.get('b')||'', region:q.get('r')||'', ak:q.get('a')||'', sk:q.get('s')||''};
       saveCfg(CFG); history.replaceState(null,'',location.pathname);
     }
   }catch(e){}
   fillInputs();
 })();
 btnSave.onclick=()=>{
-  CFG={bucket:setBucket.value.trim(), region:setRegion.value.trim()||'oss-cn-shenzhen', ak:setAk.value.trim(), sk:setSk.value.trim()};
+  CFG={bucket:setBucket.value.trim(), region:setRegion.value.trim(), ak:setAk.value.trim(), sk:setSk.value.trim()};
   saveCfg(CFG); saveMsg.textContent='已保存 ✓'; setTimeout(()=>saveMsg.style.display='none',1500);
   buildLink(); loadLineList(true); checkReady();
 };
@@ -398,9 +402,13 @@ async function ossPostObject(objPath, blob){
   return fetch(ossHost()+'/', {method:'POST', body:fd, cache:'no-store'});
 }
 function checkReady(){
-  const okCfg=CFG.bucket&&CFG.ak&&CFG.sk;
+  const okCfg=CFG.bucket&&CFG.region&&CFG.ak&&CFG.sk;
   const pend=queue.some(x=>x.status==='等待'||x.status==='err');
   btnUploadAll.disabled=!(okCfg&&LINE_NAME&&pend);
+  const tip=document.getElementById('lineTip');
+  if(!okCfg && tip && !ALL_LINES.length){
+    tip.innerHTML='<span style="color:#dc2626">配置不完整：请在下方「设置与说明」里填写 Bucket / 地域 / AccessKey（用一键配置链接打开会自动填好）</span>';
+  }
 }
 btnUploadAll.onclick=async()=>{
   msgHideAll();
