@@ -88,22 +88,29 @@
   <details>
     <summary>设置与说明</summary>
     <p class="small">阿里云 OSS 凭据（每台手机填一次，只存本机）。</p>
+    <p class="small" style="color:#92400e;background:#fffbeb;border:1px solid #fde68a;border-radius:8px;padding:8px;margin:8px 0">
+      🔐 <b>密钥 = 审批凭证</b>：新同事先向管理员申请，管理员把密钥单独发给他（微信/短信均可，<b>不要放在链接里</b>）。没有密钥的人即使打开页面也无法上传。
+    </p>
+    <p class="small" style="color:#92400e;background:#fffbeb;border:1px solid #fde68a;border-radius:8px;padding:8px;margin:8px 0">
+      🔐 这些内容会由<b>配置链接</b>自动填好，正常不用手输。<br>
+      链接里的密钥是<b>「仅上传」权限</b>：拿到链接的人也只能往云端传图片，<b>读不到、删不掉</b>已有照片。
+    </p>
     <label class="t">Bucket 名称</label>
     <input class="inp" id="setBucket" placeholder="你的桶名">
-    <label class="t">地域 Endpoint<span class="small">（按你开通 OSS 时的地域填）</span></label>
-    <input class="inp" id="setRegion" placeholder="你开通时的地域，例如 oss-cn-xxxxx">
-    <label class="t">AccessKey ID</label>
+    <label class="t">地域 Endpoint<span class="small">（按开通时的地域填）</span></label>
+    <input class="inp" id="setRegion" placeholder="例如 oss-cn-shenzhen">
+    <label class="t">AccessKey ID（仅上传权限）</label>
     <input class="inp" id="setAk" placeholder="LTAI…">
     <label class="t">AccessKey Secret</label>
     <input class="inp" id="setSk" type="password">
     <button class="btn" id="btnSave" style="margin-top:10px">保存设置</button>
     <div class="msg ok" id="saveMsg"></div>
-    <label class="t">一键配置链接（发给同事点一下即自动填好）</label>
+    <label class="t">配置链接（不含密钥 · 可安全转发）</label>
     <div style="display:flex;gap:6px;margin-top:4px">
       <input class="inp" id="linkOut" readonly style="font-size:11px">
       <button class="btn sec" id="btnLink" style="flex:0 0 72px">复制</button>
     </div>
-    <p class="small" style="margin-top:6px">⚠️ 链接里含密钥，只发本班组，建议用<b>仅上传权限</b>的专用密钥。</p>
+    <p class="small" style="margin-top:6px">这个链接只带<b>云函数地址 / 桶名 / 地域</b>，<b>不含密钥也不含审批码</b>，可以放心转发到班组群。</p>
     <p class="small" style="margin-top:10px">
       使用要点：<br>
       ① <b>先选本次巡视线路</b>（必选），再拍照/选图；<br>
@@ -202,19 +209,24 @@ function fillInputs(){ setBucket.value=CFG.bucket||''; setRegion.value=CFG.regio
     const q=new URLSearchParams(location.search);
     if(q.get('b')||q.get('a')){
       CFG={bucket:q.get('b')||'', region:q.get('r')||'', ak:q.get('a')||'', sk:q.get('s')||''};
-      saveCfg(CFG); history.replaceState(null,'',location.pathname);
+      saveCfg(CFG);
+      history.replaceState(null,'',location.pathname);   // 地址栏里不留密钥
     }
   }catch(e){}
   fillInputs();
 })();
 btnSave.onclick=()=>{
-  CFG={bucket:setBucket.value.trim(), region:setRegion.value.trim(), ak:setAk.value.trim(), sk:setSk.value.trim()};
+  CFG={bucket:setBucket.value.trim(), region:setRegion.value.trim(),
+       ak:setAk.value.trim(), sk:setSk.value.trim()};
   saveCfg(CFG); saveMsg.textContent='已保存 ✓'; setTimeout(()=>saveMsg.style.display='none',1500);
   buildLink(); loadLineList(true); checkReady();
 };
 function buildLink(){
-  linkOut.value = CFG.bucket&&CFG.ak&&CFG.sk
-    ? location.origin+location.pathname+'?b='+encodeURIComponent(CFG.bucket)+'&r='+encodeURIComponent(CFG.region)+'&a='+encodeURIComponent(CFG.ak)+'&s='+encodeURIComponent(CFG.sk)
+  // 一条链接搞定：桶名/地域/仅上传密钥，发给同事点开即用
+  linkOut.value = (CFG.bucket&&CFG.region&&CFG.ak&&CFG.sk)
+    ? location.origin+location.pathname+'?b='+encodeURIComponent(CFG.bucket)
+      +'&r='+encodeURIComponent(CFG.region)
+      +'&a='+encodeURIComponent(CFG.ak)+'&s='+encodeURIComponent(CFG.sk)
     : '（先保存设置，再复制）';
 }
 btnLink.onclick=()=>{ buildLink(); linkOut.select(); try{document.execCommand('copy');}catch(e){}
@@ -401,13 +413,29 @@ async function ossPostObject(objPath, blob){
   fd.append('file',blob,'photo.jpg');
   return fetch(ossHost()+'/', {method:'POST', body:fd, cache:'no-store'});
 }
+function hasUploadWay(){ return !!(CFG.ak && CFG.sk); }
 function checkReady(){
-  const okCfg=CFG.bucket&&CFG.region&&CFG.ak&&CFG.sk;
+  const okCfg=CFG.bucket&&CFG.region&&hasUploadWay();
   const pend=queue.some(x=>x.status==='等待'||x.status==='err');
   btnUploadAll.disabled=!(okCfg&&LINE_NAME&&pend);
   const tip=document.getElementById('lineTip');
   if(!okCfg && tip && !ALL_LINES.length){
-    tip.innerHTML='<span style="color:#dc2626">配置不完整：请在下方「设置与说明」里填写 Bucket / 地域 / AccessKey（用一键配置链接打开会自动填好）</span>';
+    tip.innerHTML='<span style="color:#dc2626">配置不完整：配置不完整：请用「配置链接」打开页面（会自动填好），或手动填写 Bucket/地域/密钥</span>';
+  }
+}
+
+/* 上传一张：直传 OSS（密钥是"仅上传"权限） */
+async function uploadOne(objPath, blob){
+  try{
+    const r = await ossPostObject(objPath, blob);
+    if(r.ok) return {ok:true, status:r.status};
+    let why='HTTP '+r.status;
+    if(r.status===403) why='Key 无效或无权上传（应使用"仅上传"密钥）';
+    if(r.status===405) why='CORS 未配置';
+    if(r.status===409) why='同名文件已存在';
+    return {ok:false, status:r.status, msg:why};
+  }catch(e){
+    return {ok:false, status:0, msg:'网络不通' };
   }
 }
 btnUploadAll.onclick=async()=>{
@@ -416,21 +444,19 @@ btnUploadAll.onclick=async()=>{
   const todo=queue.filter(x=>x.status==='等待'||x.status==='err');
   if(!todo.length) return;
   btnUploadAll.disabled=true; pg.style.display='block'; pg.value=0;
-  let done=0, fail=0;
+  let done=0, fail=0, lastErr='';
   for(let i=0;i<todo.length;i++){
     const it=todo[i];
     it.status='上传中'; renderQueue();
-    try{
-      const r=await ossPostObject(ossPath(it.name), it.blob);
-      if(r.ok){ it.status='done'; done++; }
-      else{ it.status='err'; it.err='HTTP '+r.status; fail++; }
-    }catch(e){ it.status='err'; it.err='网络失败'; fail++; }
+    const r=await uploadOne(ossPath(it.name), it.blob);
+    if(r.ok){ it.status='done'; done++; }
+    else{ it.status='err'; it.err=r.msg||('HTTP '+r.status); fail++; lastErr=it.err; }
     pg.value=(i+1)/todo.length;
     renderQueue();
   }
   checkReady();
   if(fail===0) msgShow('msgOk','✅ 全部上传成功：'+done+' 张 → <b>'+LINE_NAME+'</b><br><span class="small">办公室电脑会自动下载并按杆号归档。</span>');
-  else msgShow('msgWarn','完成：成功 '+done+' 张，失败 '+fail+' 张（可再点"全部上传"重试）');
+  else msgShow('msgWarn','完成：成功 '+done+' 张，失败 '+fail+' 张（'+lastErr+'）可再点"全部上传"重试');
 };
 
 startGps();
